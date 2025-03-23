@@ -1,0 +1,122 @@
+-- Database Schema for HOA Capital Reserves Management
+
+-- 1. Buildings Table
+CREATE TABLE Buildings (
+    BuildingID SERIAL PRIMARY KEY,  -- Unique ID for each building
+    BuildingName VARCHAR(255) NOT NULL, -- e.g., "Building 1", "Clubhouse"
+    BuildingType VARCHAR(50) NOT NULL, -- e.g., "Townhome", "Clubhouse"
+    Address VARCHAR(255),             -- Building address or location description
+    Units INTEGER                     -- Number of units in the building (if applicable)
+    -- Add other relevant building details as needed
+);
+
+-- 2. Roofs Table
+CREATE TABLE Roofs (
+    RoofID SERIAL PRIMARY KEY,       -- Unique ID for each roof record
+    BuildingID INT REFERENCES Buildings(BuildingID), -- Foreign key linking to Buildings table
+    RoofSectionName VARCHAR(255),   -- e.g., "Main Roof Section", "Garage Roof" (optional, for buildings with multiple roof sections)
+    InstallationDate DATE,           -- Date of roof installation
+    Material VARCHAR(100),           -- Roof material (e.g., Asphalt Shingles, Tile)
+    EstimatedLifespanYears INTEGER,  -- Estimated lifespan in years
+    WarrantyEndDate DATE,             -- End date of roof warranty
+    ReplacementDate DATE,           -- Date of roof replacement (if applicable)
+    ExpenditureID INT REFERENCES Expenditures(ExpenditureID) -- Link to expenditure if roof replacement is recorded
+    -- Add other relevant roof details like area, contractor, etc.
+);
+
+-- 3. Roadways Table
+CREATE TABLE Roadways (
+    RoadwayID SERIAL PRIMARY KEY,    -- Unique ID for each roadway segment
+    RoadwayName VARCHAR(255) NOT NULL, -- e.g., "Court 1 Roadway", "Main Roadway"
+    SurfaceType VARCHAR(100),        -- Road surface type (e.g., Asphalt, Concrete)
+    LengthYards DECIMAL,             -- Length in yards
+    WidthYards DECIMAL,              -- Width in yards
+    LastResurfacingDate DATE,        -- Date of last resurfacing
+    EstimatedResurfacingIntervalYears INTEGER, -- Estimated interval for resurfacing
+    NextResurfacingDueDate DATE GENERATED ALWAYS AS (LastResurfacingDate + INTERVAL '1 year' * EstimatedResurfacingIntervalYears) STORED, -- Calculate next due date
+    ExpenditureID INT REFERENCES Expenditures(ExpenditureID) -- Link to expenditure if resurfacing/maintenance is recorded
+    -- Add other roadway details like condition assessment, etc.
+);
+
+-- 4. Bridge Table
+CREATE TABLE Bridge (
+    BridgeID SERIAL PRIMARY KEY,     -- Unique ID for the bridge
+    BridgeName VARCHAR(255) DEFAULT 'Main Bridge', -- Bridge name (can be defaulted)
+    ConstructionDate DATE,          -- Date of bridge construction
+    LengthFeet DECIMAL,              -- Length in feet
+    WidthFeet DECIMAL,               -- Width in feet
+    LastInspectionDate DATE,        -- Date of last bridge inspection
+    InspectionFrequencyYears INTEGER, -- Frequency of inspections in years
+    NextInspectionDueDate DATE GENERATED ALWAYS AS (LastInspectionDate + INTERVAL '1 year' * InspectionFrequencyYears) STORED, -- Calculate next due date
+    LastMaintenanceDate DATE,       -- Date of last major maintenance
+    ExpenditureID INT REFERENCES Expenditures(ExpenditureID) -- Link to expenditure if maintenance is recorded
+    -- Add other bridge details like inspection reports, load capacity, etc.
+);
+
+-- 5. Expenditures Table
+CREATE TABLE Expenditures (
+    ExpenditureID SERIAL PRIMARY KEY,  -- Unique ID for each expenditure record
+    Date DATE NOT NULL,              -- Date of expenditure
+    Description TEXT,                 -- Description of expenditure (e.g., "Roof Replacement Building 1", "Roadway Repair Court 2")
+    Amount DECIMAL(19, 2) NOT NULL,   -- Amount of expenditure
+    GLAccountID INT REFERENCES GLAccounts(GLAccountID), -- Foreign key to General Ledger Account
+    PaymentMethod VARCHAR(50),        -- e.g., "Check", "Bank Transfer", "Credit Card"
+    BankAccountId INT REFERENCES BankAccounts(BankAccountId) -- Foreign key to Bank Accounts table
+    -- Could add fields for vendor, invoice number, etc.
+);
+
+-- 6. GLAccounts Table (General Ledger Accounts)
+CREATE TABLE GLAccounts (
+    GLAccountID SERIAL PRIMARY KEY,  -- Unique ID for GL Account
+    AccountName VARCHAR(255) NOT NULL UNIQUE, -- e.g., "Roofing Expense", "Roadway Maintenance", "Reserve Contributions"
+    AccountCategory VARCHAR(100),    -- e.g., "Operating Expense", "Capital Reserve", "Liability"
+    AccountNumber VARCHAR(50) UNIQUE  -- Optional: Account number for chart of accounts
+    -- You can define a more detailed chart of accounts as needed
+);
+
+-- 7. BankAccounts Table
+CREATE TABLE BankAccounts (
+    BankAccountId SERIAL PRIMARY KEY, -- Unique ID for Bank Account
+    BankName VARCHAR(255) NOT NULL,  -- Name of the bank
+    AccountNumber VARCHAR(255) NOT NULL UNIQUE, -- Bank account number (store securely if needed)
+    AccountType VARCHAR(50),         -- e.g., "Checking", "Savings", "Reserve Fund"
+    AccountDescription VARCHAR(255)   -- Description of the account
+    -- Add other relevant bank account details
+);
+
+-- 8. Users Table
+CREATE TABLE Users (
+    UserID SERIAL PRIMARY KEY,       -- Unique ID for each user
+    Username VARCHAR(50) NOT NULL UNIQUE, -- Username for login
+    PasswordHash VARCHAR(255) NOT NULL, -- Hashed password (NEVER store plain text passwords)
+    FirstName VARCHAR(100),
+    LastName VARCHAR(100),
+    Email VARCHAR(255) UNIQUE,
+    Role VARCHAR(50) NOT NULL,       -- e.g., "MasterAdmin", "Admin", "ReadOnly"
+    CreatedDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    LastLogin TIMESTAMP
+    -- Consider adding fields for password reset tokens, etc.
+);
+
+-- 9. UserRoles Table (If you need more granular permissions, optional but good for scalability)
+CREATE TABLE UserRoles (
+    RoleID SERIAL PRIMARY KEY,
+    RoleName VARCHAR(50) NOT NULL UNIQUE, -- e.g., "MasterAdmin", "FinancialAdmin", "MaintenanceViewer"
+    Permissions TEXT -- JSON or comma-separated list of permissions, e.g., "read_expenditures,write_expenditures,read_reports"
+);
+
+-- 10. UserRoleAssignments (For many-to-many user-role relationship if using UserRoles table)
+CREATE TABLE UserRoleAssignments (
+    UserID INT REFERENCES Users(UserID),
+    RoleID INT REFERENCES UserRoles(RoleID),
+    PRIMARY KEY (UserID, RoleID) -- Composite primary key
+);
+
+-- Link Users to roles - Use a simple 'Role' column in Users table for basic roles or more complex UserRoles/UserRoleAssignments for finer control.
+-- Use the 'Role' column in the Users table for simplicity.
+
+
+-- Sample Roles (using 'Role' column in Users Table):
+-- 'MasterAdmin': Full access, can manage users and roles, system settings.
+-- 'Admin': Can manage capital reserves data, expenditures, financial data, generate reports.
+-- 'ReadOnly': Can view data and generate reports but cannot modify.
