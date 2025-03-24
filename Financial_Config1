@@ -1,0 +1,75 @@
+CREATE TABLE FinancialAccounts (
+    id SERIAL PRIMARY KEY,
+    property_id INT NOT NULL,
+    bank_name VARCHAR(255),
+    account_number VARCHAR(20),
+    account_type VARCHAR(50),
+    balance DECIMAL(18, 2),
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (property_id) REFERENCES Properties(id)
+);
+CREATE TABLE Transactions (
+    id SERIAL PRIMARY KEY,
+    account_id INT NOT NULL,
+    transaction_date DATE,
+    description VARCHAR(255),
+    amount DECIMAL(18, 2),
+    transaction_type VARCHAR(50),
+    FOREIGN KEY (account_id) REFERENCES FinancialAccounts(id)
+);
+API Integration 
+import requests
+import psycopg2
+from datetime import datetime
+# Database connection
+conn = psycopg2.connect(
+    host="your_host",
+    database="your_db",
+    user="your_user",
+    password="your_password"
+)
+# Function to fetch data from the financial institution's API
+def fetch_financial_data(api_url, headers, property_id):
+    response = requests.get(api_url, headers=headers)
+    if response.status_code == 200:
+        data = response.json()
+        update_database(data, property_id)
+    else:
+        print(f"Failed to fetch data: {response.status_code}")
+
+# Function to update the database
+def update_database(data, property_id):
+    cursor = conn.cursor()
+    # Update account balance
+    for account in data.get('accounts', []):
+        cursor.execute("""
+            INSERT INTO FinancialAccounts (property_id, bank_name, account_number, account_type, balance, last_updated)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (account_number) DO UPDATE
+            SET balance = EXCLUDED.balance, last_updated = EXCLUDED.last_updated;
+        """, (property_id, account['bank_name'], account['account_number'], account['type'], account['balance'], datetime.now()))    
+    # Insert transactions
+    for transaction in data.get('transactions', []):
+        cursor.execute("""
+            INSERT INTO Transactions (account_id, transaction_date, description, amount, transaction_type)
+            VALUES (
+                (SELECT id FROM FinancialAccounts WHERE account_number = %s),
+                %s, %s, %s, %s
+            );
+        """, (transaction['account_number'], transaction['date'], transaction['description'], transaction['amount'], transaction['type']))  
+    conn.commit()
+    cursor.close()
+# Scheduling the updates
+def schedule_updates(api_url, headers, property_id, interval):
+    import schedule
+    import time
+
+    schedule.every(interval).minutes.do(fetch_financial_data, api_url, headers, property_id)
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
+# Example Usage
+api_url = "https://api.financialinstitution.com/accounts"
+headers = {"Authorization": "Bearer your_access_token"}
+property_id = 1
+schedule_updates(api_url, headers, property_id, interval=15)
